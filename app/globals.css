@@ -1,0 +1,168 @@
+/* Use Next.js built-in font system instead of CSS import */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Theme: Teal & Emerald. Token names kept app-wide; only values remapped. */
+    --soft-blue: 174 84% 32%; /* primary  — teal-600  */
+    --vibrant-green: 160 84% 39%; /* accent   — emerald-500 */
+    --warm-orange: 38 92% 50%; /* warn     — amber-500 */
+    --calming-white: 210 40% 98%; /* bg       — slate-50  */
+    --light-gray: 214 32% 91%; /* border   — slate-200 */
+    --rich-navy: 222 47% 11%; /* text     — slate-900 */
+    --gentle-lavender: 167 85% 89%; /* secondary— teal-100  */
+    --soft-yellow: 48 96% 76%; /* soft acc — amber-200 */
+
+    /* Shadcn UI variables */
+    --background: var(--calming-white);
+    --foreground: var(--rich-navy);
+
+    --card: 0 0% 100%;
+    --card-foreground: var(--rich-navy);
+
+    --popover: 0 0% 100%;
+    --popover-foreground: var(--rich-navy);
+
+    --primary: var(--soft-blue);
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: var(--gentle-lavender);
+    --secondary-foreground: var(--rich-navy);
+
+    --muted: var(--light-gray);
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: var(--soft-yellow);
+    --accent-foreground: var(--rich-navy);
+
+    --destructive: var(--warm-orange);
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: var(--soft-blue);
+
+    --radius: 1rem;
+
+    /* Sidebar variables */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: var(--rich-navy);
+    --sidebar-border: var(--light-gray);
+    --sidebar-accent: var(--light-gray);
+    --sidebar-accent-foreground: var(--rich-navy);
+    --sidebar-ring: var(--soft-blue);
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: var(--soft-blue);
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: var(--gentle-lavender);
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: var(--soft-yellow);
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: var(--warm-orange);
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: var(--soft-blue);
+
+    /* Sidebar variables */
+    --sidebar-background: 222.2 84% 4.9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-ring: var(--soft-blue);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
+      "Open Sans", "Helvetica Neue", sans-serif;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
+      "Open Sans", "Helvetica Neue", sans-serif;
+    font-weight: 600;
+  }
+  h1 {
+    @apply text-2xl font-bold;
+  }
+  h2 {
+    @apply text-xl font-bold;
+  }
+  h3 {
+    @apply text-lg font-semibold;
+  }
+  p,
+  span,
+  div {
+    @apply text-base;
+  }
+  button {
+    @apply text-lg font-bold;
+  }
+}
+
+@layer components {
+  .card-shadow {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .btn-primary {
+    @apply bg-[hsl(var(--soft-blue))] text-white rounded-full shadow-md hover:shadow-lg transition-all;
+  }
+
+  .btn-secondary {
+    @apply bg-[hsl(var(--gentle-lavender))] text-[hsl(var(--rich-navy))] rounded-full shadow-md hover:shadow-lg transition-all;
+  }
+
+  .feature-card {
+    @apply bg-[hsl(var(--light-gray))] rounded-2xl p-4 shadow-md hover:shadow-lg transition-all;
+  }
+
+  [role="progressbar"] > div {
+    height: 100%;
+    transition: width 0.2s ease;
+  }
+
+  [role="progressbar"] > div {
+    background-color: var(--warm-orange);
+  }
+
+  [role="progressbar"]:has(~ .sleep-optimal) > div {
+    background-color: var(--vibrant-green);
+  }
+
+  [role="progressbar"]:has(~ .sleep-adequate) > div {
+    background-color: var(--soft-yellow);
+  }
+}
