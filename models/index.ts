@@ -1,5 +1,7 @@
 import mongoose, { Schema, type Model } from "mongoose"
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // Strip Mongo internals and never leak uid to the client; expose `id`.
 const toJSON = {
   virtuals: true,
@@ -12,8 +14,11 @@ const toJSON = {
 }
 
 // Reuse an already-compiled model on hot reload instead of redefining it.
-function model<T>(name: string, schema: Schema): Model<T> {
-  return (mongoose.models[name] as Model<T>) || mongoose.model<T>(name, schema)
+// Typed as Model<any> on purpose: instantiating Mongoose's deep generic query
+// types across every model blows up tsc's memory, and this is a server-only
+// data layer where the API routes shape the responses.
+function model(name: string, schema: Schema): Model<any> {
+  return (mongoose.models[name] as Model<any>) || mongoose.model(name, schema)
 }
 
 const ProfileSchema = new Schema(

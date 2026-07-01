@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import {
   Card,
   CardContent,
@@ -42,6 +44,7 @@ interface Post {
 
 export default function Community() {
   const { toast } = useToast()
+  const router = useRouter()
   const [posts, setPosts] = useState<Post[]>([])
   const [newPostContent, setNewPostContent] = useState("")
   const [userName, setUserName] = useState("")
@@ -52,69 +55,32 @@ export default function Community() {
       const user = JSON.parse(storedUser)
       setUserName(user.name || "User")
     }
-
-    const storedPosts = localStorage.getItem("communityPosts")
-    if (storedPosts) {
-      setPosts(JSON.parse(storedPosts))
-    } else {
-      const samplePosts: Post[] = [
-        {
-          id: "1",
-          author: { name: "Sarah J." },
-          content: "Just completed my morning stretches! My back feels so much better already. 💪",
-          timestamp: "2 hours ago",
-          likes: 12,
-          comments: 3,
-          tags: ["MorningRoutine", "StretchGoals"],
-        },
-        {
-          id: "2",
-          author: { name: "Michael T." },
-          content:
-            "Has anyone tried using a standing desk? I'm considering getting one to help with my lower back pain during work hours.",
-          timestamp: "Yesterday",
-          likes: 8,
-          comments: 7,
-          tags: ["WorkSetup", "StandingDesk"],
-        },
-        {
-          id: "3",
-          author: { name: "Dr. Lisa Chen" },
-          content:
-            "Quick tip: When sitting for long periods, make sure your feet are flat on the floor and your knees are at a 90-degree angle. This helps maintain proper posture and reduces strain on your back.",
-          timestamp: "2 days ago",
-          likes: 24,
-          comments: 5,
-          tags: ["ExpertTip", "Posture"],
-        },
-        {
-          id: "4",
-          author: { name: "Alex W." },
-          content:
-            "I've been using the VitalTrack app for a month now, and my back pain has decreased significantly! The exercise plans and posture reminders have been game-changers for me.",
-          timestamp: "3 days ago",
-          likes: 18,
-          comments: 2,
-          tags: ["Success", "Progress"],
-        },
-        {
-          id: "5",
-          author: { name: "Jamie L." },
-          content:
-            "Just had my first appointment with a physical therapist recommended through the app. So grateful for this community and all the resources!",
-          timestamp: "4 days ago",
-          likes: 15,
-          comments: 4,
-          tags: ["PhysicalTherapy", "Grateful"],
-        },
-      ]
-
-      setPosts(samplePosts)
-      localStorage.setItem("communityPosts", JSON.stringify(samplePosts))
-    }
   }, [])
 
-  const handlePostSubmit = () => {
+  useEffect(() => {
+    let active = true
+    apiFetch<Post[]>("/api/community")
+      .then((d) => {
+        if (active) setPosts(d)
+      })
+      .catch((err) => {
+        if (!active) return
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Couldn't load posts",
+          description: err instanceof Error ? err.message : "Something went wrong",
+          variant: "destructive",
+        })
+      })
+    return () => {
+      active = false
+    }
+  }, [router, toast])
+
+  const handlePostSubmit = async () => {
     if (!newPostContent.trim()) {
       toast({
         title: "Empty post",
@@ -124,42 +90,53 @@ export default function Community() {
       return
     }
 
-    const newPost: Post = {
-      id: Date.now().toString(),
-      author: { name: userName },
-      content: newPostContent,
-      timestamp: "Just now",
-      likes: 0,
-      comments: 0,
-      tags: ["NewPost"],
+    try {
+      const createdPost = await apiFetch<Post>("/api/community", {
+        method: "POST",
+        body: JSON.stringify({
+          content: newPostContent,
+          authorName: userName,
+          tags: ["NewPost"],
+        }),
+      })
+
+      setPosts((prevPosts) => [createdPost, ...prevPosts])
+      setNewPostContent("")
+
+      toast({
+        title: "Post shared",
+        description: "Your post has been shared with the community",
+      })
+    } catch (err) {
+      toast({
+        title: "Couldn't share post",
+        description: err instanceof Error ? err.message : "Something went wrong",
+        variant: "destructive",
+      })
     }
-
-    const updatedPosts = [newPost, ...posts]
-    setPosts(updatedPosts)
-    localStorage.setItem("communityPosts", JSON.stringify(updatedPosts))
-
-    setNewPostContent("")
-
-    toast({
-      title: "Post shared",
-      description: "Your post has been shared with the community",
-    })
   }
 
-  const handleLikePost = (postId: string) => {
-    setPosts((prevPosts) =>
-      prevPosts.map((post) => {
-        if (post.id === postId) {
-          const isLiked = post.liked || false
-          return {
-            ...post,
-            likes: isLiked ? post.likes - 1 : post.likes + 1,
-            liked: !isLiked,
-          }
-        }
-        return post
-      }),
-    )
+  const handleLikePost = async (postId: string) => {
+    try {
+      const result = await apiFetch<{ liked: boolean; likes: number }>(
+        `/api/community/${postId}/like`,
+        { method: "POST" },
+      )
+
+      setPosts((prevPosts) =>
+        prevPosts.map((post) =>
+          post.id === postId
+            ? { ...post, liked: result.liked, likes: result.likes }
+            : post,
+        ),
+      )
+    } catch (err) {
+      toast({
+        title: "Couldn't update like",
+        description: err instanceof Error ? err.message : "Something went wrong",
+        variant: "destructive",
+      })
+    }
   }
 
   const renderPostCard = (post: Post) => (
@@ -173,7 +150,7 @@ export default function Community() {
             </Avatar>
             <div>
               <CardTitle className="text-base">{post.author.name}</CardTitle>
-              <CardDescription>{post.timestamp}</CardDescription>
+              <CardDescription>{new Date(post.timestamp).toLocaleString()}</CardDescription>
             </div>
           </div>
         </div>

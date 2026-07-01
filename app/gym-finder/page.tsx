@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,12 +38,63 @@ interface Gym {
   }[]
 }
 
+interface GymReview {
+  id: string
+  gymId: string
+  author: string
+  rating: number
+  comment: string
+}
+
 export default function GymFinder() {
   const { toast } = useToast()
+  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [reviewGymId, setReviewGymId] = useState<string | null>(null)
   const [reviewRating, setReviewRating] = useState(5)
   const [reviewComment, setReviewComment] = useState("")
+  const [userReviews, setUserReviews] = useState<Record<string, GymReview[]>>({})
+  const [userName, setUserName] = useState("")
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user")
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser) as { name?: string }
+        if (user.name) setUserName(user.name)
+      } catch {
+        /* ignore malformed stored user */
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    apiFetch<GymReview[]>("/api/gym-reviews")
+      .then((reviews) => {
+        if (!active) return
+        const grouped = reviews.reduce<Record<string, GymReview[]>>((acc, review) => {
+          ;(acc[review.gymId] ??= []).push(review)
+          return acc
+        }, {})
+        setUserReviews(grouped)
+      })
+      .catch((err) => {
+        if (!active) return
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Couldn't load reviews",
+          description: err instanceof Error ? err.message : "Something went wrong",
+          variant: "destructive",
+        })
+      })
+    return () => {
+      active = false
+    }
+  }, [router, toast])
 
   // Sample gyms data
   const gyms: Gym[] = [

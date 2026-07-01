@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -8,6 +9,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
 import { Badge } from "@/components/ui/badge"
+import { apiFetch, ApiError } from "@/lib/api-client"
 
 interface MoodEntry {
   id: string
@@ -18,6 +20,7 @@ interface MoodEntry {
 
 export default function MoodJournal() {
   const { toast } = useToast()
+  const router = useRouter()
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [selectedMood, setSelectedMood] = useState<string | null>(null)
   const [journalEntry, setJournalEntry] = useState("")
@@ -76,33 +79,28 @@ export default function MoodJournal() {
   ]
 
   useEffect(() => {
-    // Load mood entries from localStorage or use sample data
-    const storedEntries = localStorage.getItem("moodEntries")
-    if (storedEntries) {
-      setMoodEntries(JSON.parse(storedEntries))
-    } else {
-      // Sample data for demonstration
-      const today = new Date()
-      const sampleData: MoodEntry[] = Array.from({ length: 7 }).map((_, index) => {
-        const date = new Date(today)
-        date.setDate(date.getDate() - (6 - index))
-        const dateString = date.toISOString().split("T")[0]
-
-        // Random mood
-        const randomMood = moods[Math.floor(Math.random() * moods.length)]
-
-        return {
-          id: `sample-${index}`,
-          date: dateString,
-          mood: randomMood.label,
-          journal: `Today I felt ${randomMood.label.toLowerCase()}. ${index % 2 === 0 ? "My back pain was manageable." : "I struggled with back pain today but tried to stay positive."}`,
-        }
+    let active = true
+    apiFetch<MoodEntry[]>("/api/mood")
+      .then((d) => {
+        if (active) setMoodEntries(d)
       })
-
-      setMoodEntries(sampleData)
-      localStorage.setItem("moodEntries", JSON.stringify(sampleData))
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Couldn't load journal",
+          description: err instanceof Error ? err.message : "Something went wrong",
+          variant: "destructive",
+        })
+      })
+    return () => {
+      active = false
     }
+  }, [router, toast])
 
+  useEffect(() => {
     // Set random quote
     setQuote(motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)])
   }, [])
@@ -124,7 +122,7 @@ export default function MoodJournal() {
     }
   }, [selectedDate, existingEntry])
 
-  const handleSaveEntry = () => {
+  const handleSaveEntry = async () => {
     if (!selectedMood) {
       toast({
         title: "Mood required",
@@ -139,42 +137,42 @@ export default function MoodJournal() {
     // Check if entry for this date already exists
     const existingEntryIndex = moodEntries.findIndex((entry) => entry.date === dateStr)
 
-    let updatedEntries: MoodEntry[]
-
-    if (existingEntryIndex >= 0) {
-      // Update existing entry
-      updatedEntries = [...moodEntries]
-      updatedEntries[existingEntryIndex] = {
-        ...updatedEntries[existingEntryIndex],
-        mood: selectedMood,
-        journal: journalEntry,
-      }
-
-      toast({
-        title: "Journal updated",
-        description: `Your mood journal for ${format(selectedDate, "MMMM d")} has been updated`,
+    try {
+      const saved = await apiFetch<MoodEntry>("/api/mood", {
+        method: "POST",
+        body: JSON.stringify({ date: dateStr, mood: selectedMood, journal: journalEntry }),
       })
-    } else {
-      // Add new entry
-      const newEntry: MoodEntry = {
-        id: Date.now().toString(),
-        date: dateStr,
-        mood: selectedMood,
-        journal: journalEntry,
+
+      // Merge the returned entry into state: replace an existing entry with the
+      // same date, otherwise prepend it (newest first).
+      setMoodEntries((prev) => {
+        const index = prev.findIndex((entry) => entry.date === saved.date)
+        if (index >= 0) {
+          const next = [...prev]
+          next[index] = saved
+          return next
+        }
+        return [saved, ...prev]
+      })
+
+      if (existingEntryIndex >= 0) {
+        toast({
+          title: "Journal updated",
+          description: `Your mood journal for ${format(selectedDate, "MMMM d")} has been updated`,
+        })
+      } else {
+        toast({
+          title: "Journal saved",
+          description: `Your mood journal for ${format(selectedDate, "MMMM d")} has been saved`,
+        })
       }
-
-      updatedEntries = [...moodEntries, newEntry].sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-      )
-
+    } catch (err) {
       toast({
-        title: "Journal saved",
-        description: `Your mood journal for ${format(selectedDate, "MMMM d")} has been saved`,
+        title: "Couldn't save journal",
+        description: err instanceof Error ? err.message : "Something went wrong",
+        variant: "destructive",
       })
     }
-
-    setMoodEntries(updatedEntries)
-    localStorage.setItem("moodEntries", JSON.stringify(updatedEntries))
   }
 
   const getMoodEmoji = (moodLabel: string) => {
@@ -277,8 +275,7 @@ export default function MoodJournal() {
           <CardContent>
             <div className="space-y-3">
               {moodEntries
-                .slice(-5)
-                .reverse()
+                .slice(0, 5)
                 .map((entry) => (
                   <div
                     key={entry.id}

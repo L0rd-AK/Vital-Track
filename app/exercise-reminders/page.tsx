@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -21,6 +23,7 @@ interface Reminder {
 
 export default function ExerciseReminders() {
   const { toast } = useToast()
+  const router = useRouter()
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [newReminderTime, setNewReminderTime] = useState("08:00")
   const [newReminderLabel, setNewReminderLabel] = useState("Morning Stretch")
@@ -38,34 +41,34 @@ export default function ExerciseReminders() {
   ]
 
   useEffect(() => {
-    // Load reminders from localStorage or use sample data
-    const storedReminders = localStorage.getItem("exerciseReminders")
-    if (storedReminders) {
-      setReminders(JSON.parse(storedReminders))
-    } else {
-      // Sample data for demonstration
-      const sampleReminders: Reminder[] = [
-        { id: "1", time: "08:00", enabled: true, label: "Morning Stretch", days: ["mon", "tue", "wed", "thu", "fri"] },
-        { id: "2", time: "12:30", enabled: true, label: "Lunch Break Exercise", days: ["mon", "wed", "fri"] },
-        { id: "3", time: "17:00", enabled: false, label: "Evening Workout", days: ["tue", "thu"] },
-      ]
-      setReminders(sampleReminders)
-      localStorage.setItem("exerciseReminders", JSON.stringify(sampleReminders))
+    let active = true
+    Promise.all([
+      apiFetch<Reminder[]>("/api/reminders"),
+      apiFetch<string[]>("/api/lists/completedExercises"),
+    ])
+      .then(([r, c]) => {
+        if (active) {
+          setReminders(r)
+          setCompletedToday(c)
+        }
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Couldn't load reminders",
+          description: err instanceof Error ? err.message : "Please try again.",
+          variant: "destructive",
+        })
+      })
+    return () => {
+      active = false
     }
+  }, [router, toast])
 
-    // Load completed exercises
-    const storedCompleted = localStorage.getItem("completedExercises")
-    if (storedCompleted) {
-      setCompletedToday(JSON.parse(storedCompleted))
-    }
-  }, [])
-
-  const saveReminders = (updatedReminders: Reminder[]) => {
-    setReminders(updatedReminders)
-    localStorage.setItem("exerciseReminders", JSON.stringify(updatedReminders))
-  }
-
-  const handleAddReminder = () => {
+  const handleAddReminder = async () => {
     if (!newReminderTime) {
       toast({
         title: "Time required",
@@ -84,52 +87,81 @@ export default function ExerciseReminders() {
       return
     }
 
-    const newReminder: Reminder = {
-      id: Date.now().toString(),
-      time: newReminderTime,
-      enabled: true,
-      label: newReminderLabel || "Exercise Reminder",
-      days: selectedDays,
-    }
+    try {
+      const created = await apiFetch<Reminder>("/api/reminders", {
+        method: "POST",
+        body: JSON.stringify({
+          time: newReminderTime,
+          label: newReminderLabel || "Exercise Reminder",
+          days: selectedDays,
+          enabled: true,
+        }),
+      })
 
-    const updatedReminders = [...reminders, newReminder]
-    saveReminders(updatedReminders)
+      setReminders((prev) => [...prev, created])
 
-    toast({
-      title: "Reminder added",
-      description: `${newReminder.label} at ${formatTime(newReminder.time)}`,
-    })
-
-    // Reset form
-    setNewReminderTime("08:00")
-    setNewReminderLabel("Morning Stretch")
-    setSelectedDays(["mon", "tue", "wed", "thu", "fri"])
-  }
-
-  const handleToggleReminder = (id: string) => {
-    const updatedReminders = reminders.map((reminder) =>
-      reminder.id === id ? { ...reminder, enabled: !reminder.enabled } : reminder,
-    )
-    saveReminders(updatedReminders)
-
-    const reminder = updatedReminders.find((r) => r.id === id)
-    if (reminder) {
       toast({
-        title: reminder.enabled ? "Reminder enabled" : "Reminder disabled",
-        description: `${reminder.label} at ${formatTime(reminder.time)}`,
+        title: "Reminder added",
+        description: `${created.label} at ${formatTime(created.time)}`,
+      })
+
+      // Reset form
+      setNewReminderTime("08:00")
+      setNewReminderLabel("Morning Stretch")
+      setSelectedDays(["mon", "tue", "wed", "thu", "fri"])
+    } catch (err) {
+      toast({
+        title: "Couldn't add reminder",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
       })
     }
   }
 
-  const handleDeleteReminder = (id: string) => {
-    const reminderToDelete = reminders.find((r) => r.id === id)
-    const updatedReminders = reminders.filter((reminder) => reminder.id !== id)
-    saveReminders(updatedReminders)
+  const handleToggleReminder = async (id: string) => {
+    const current = reminders.find((r) => r.id === id)
+    if (!current) return
 
-    if (reminderToDelete) {
+    try {
+      const updated = await apiFetch<Reminder>(`/api/reminders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled: !current.enabled }),
+      })
+
+      setReminders((prev) => prev.map((reminder) => (reminder.id === id ? updated : reminder)))
+
       toast({
-        title: "Reminder deleted",
-        description: `${reminderToDelete.label} at ${formatTime(reminderToDelete.time)}`,
+        title: updated.enabled ? "Reminder enabled" : "Reminder disabled",
+        description: `${updated.label} at ${formatTime(updated.time)}`,
+      })
+    } catch (err) {
+      toast({
+        title: "Couldn't update reminder",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDeleteReminder = async (id: string) => {
+    const reminderToDelete = reminders.find((r) => r.id === id)
+
+    try {
+      await apiFetch<void>(`/api/reminders/${id}`, { method: "DELETE" })
+
+      setReminders((prev) => prev.filter((reminder) => reminder.id !== id))
+
+      if (reminderToDelete) {
+        toast({
+          title: "Reminder deleted",
+          description: `${reminderToDelete.label} at ${formatTime(reminderToDelete.time)}`,
+        })
+      }
+    } catch (err) {
+      toast({
+        title: "Couldn't delete reminder",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
       })
     }
   }
@@ -168,21 +200,33 @@ export default function ExerciseReminders() {
     return days.map((day) => day.charAt(0).toUpperCase() + day.slice(1, 3)).join(", ")
   }
 
-  const toggleCompleted = (id: string) => {
-    setCompletedToday((prev) => {
-      let updated
-      if (prev.includes(id)) {
-        updated = prev.filter((itemId) => itemId !== id)
-      } else {
-        updated = [...prev, id]
+  const toggleCompleted = async (id: string) => {
+    const wasCompleted = completedToday.includes(id)
+    const items = wasCompleted
+      ? completedToday.filter((itemId) => itemId !== id)
+      : [...completedToday, id]
+
+    try {
+      const saved = await apiFetch<string[]>("/api/lists/completedExercises", {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      })
+
+      setCompletedToday(saved)
+
+      if (!wasCompleted) {
         toast({
           title: "Exercise completed",
           description: "Great job! Keep up the good work.",
         })
       }
-      localStorage.setItem("completedExercises", JSON.stringify(updated))
-      return updated
-    })
+    } catch (err) {
+      toast({
+        title: "Couldn't update progress",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   return (

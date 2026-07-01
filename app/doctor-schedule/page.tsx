@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,11 +26,49 @@ interface Doctor {
   image?: string
 }
 
+interface Appointment {
+  id: string
+  doctorId: string
+  doctorName: string
+  specialty: string
+  date: string
+}
+
 export default function DoctorSchedule() {
   const { toast } = useToast()
+  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [specialtyFilter, setSpecialtyFilter] = useState("")
   const [date, setDate] = useState<Date>()
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+
+  useEffect(() => {
+    let active = true
+
+    const loadAppointments = async () => {
+      try {
+        const data = await apiFetch<Appointment[]>("/api/appointments")
+        if (active) setAppointments(data)
+      } catch (error) {
+        if (!active) return
+        if (error instanceof ApiError && error.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Unable to load appointments",
+          description: "Please try again later.",
+          variant: "destructive",
+        })
+      }
+    }
+
+    loadAppointments()
+
+    return () => {
+      active = false
+    }
+  }, [router, toast])
 
   // Sample doctors data
   const doctors: Doctor[] = [
@@ -95,7 +135,7 @@ export default function DoctorSchedule() {
     return matchesSearch && matchesSpecialty
   })
 
-  const handleBookAppointment = (doctorId: string) => {
+  const handleBookAppointment = async (doctorId: string) => {
     const doctor = doctors.find((d) => d.id === doctorId)
 
     if (!doctor) return
@@ -121,10 +161,34 @@ export default function DoctorSchedule() {
       return
     }
 
-    toast({
-      title: "Appointment booked",
-      description: `Your appointment with Dr. ${doctor.name} on ${format(date, "MMMM d, yyyy")} has been scheduled`,
-    })
+    try {
+      const created = await apiFetch<Appointment>("/api/appointments", {
+        method: "POST",
+        body: JSON.stringify({
+          doctorId: doctor.id,
+          doctorName: doctor.name,
+          specialty: doctor.specialty,
+          date: formattedDate,
+        }),
+      })
+
+      setAppointments((prev) => [...prev, created])
+
+      toast({
+        title: "Appointment booked",
+        description: `Your appointment with Dr. ${doctor.name} on ${format(date, "MMMM d, yyyy")} has been scheduled`,
+      })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        router.push("/login")
+        return
+      }
+      toast({
+        title: "Booking failed",
+        description: "We couldn't book your appointment. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   const renderRatingStars = (rating: number) => {

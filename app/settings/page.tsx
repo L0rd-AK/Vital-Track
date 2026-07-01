@@ -1,41 +1,117 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import { Bell, Moon, Sun, Volume2 } from "lucide-react"
+
+interface SettingsData {
+  darkMode: boolean
+  notifications: boolean
+  sounds: boolean
+}
 
 export default function Settings() {
   const { toast } = useToast()
+  const router = useRouter()
   const [darkMode, setDarkMode] = useState(false)
   const [notifications, setNotifications] = useState(true)
   const [sounds, setSounds] = useState(true)
 
-  const handleToggleDarkMode = (checked: boolean) => {
+  useEffect(() => {
+    let active = true
+
+    const loadSettings = async () => {
+      try {
+        const data = await apiFetch<SettingsData>("/api/settings")
+        if (!active) return
+        setDarkMode(data.darkMode)
+        setNotifications(data.notifications)
+        setSounds(data.sounds)
+      } catch (error) {
+        if (!active) return
+        if (error instanceof ApiError && error.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Failed to load settings",
+          description: "Please try again later",
+          variant: "destructive",
+        })
+      }
+    }
+
+    void loadSettings()
+
+    return () => {
+      active = false
+    }
+  }, [router, toast])
+
+  const handleToggleDarkMode = async (checked: boolean) => {
     setDarkMode(checked)
     toast({
       title: checked ? "Dark mode enabled" : "Light mode enabled",
       description: "Your preference has been saved",
     })
+    try {
+      await apiFetch<SettingsData>("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({ darkMode: checked }),
+      })
+    } catch {
+      toast({
+        title: "Failed to save setting",
+        description: "Please try again later",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleToggleNotifications = (checked: boolean) => {
+  const handleToggleNotifications = async (checked: boolean) => {
     setNotifications(checked)
     toast({
       title: checked ? "Notifications enabled" : "Notifications disabled",
       description: "Your preference has been saved",
     })
+    try {
+      await apiFetch<SettingsData>("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({ notifications: checked }),
+      })
+    } catch {
+      toast({
+        title: "Failed to save setting",
+        description: "Please try again later",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleToggleSounds = (checked: boolean) => {
+  const handleToggleSounds = async (checked: boolean) => {
     setSounds(checked)
     toast({
       title: checked ? "Sounds enabled" : "Sounds disabled",
       description: "Your preference has been saved",
     })
+    try {
+      await apiFetch<SettingsData>("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({ sounds: checked }),
+      })
+    } catch {
+      toast({
+        title: "Failed to save setting",
+        description: "Please try again later",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleClearData = () => {

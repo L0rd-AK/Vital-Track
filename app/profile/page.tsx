@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,6 +24,7 @@ interface UserProfile {
 
 export default function Profile() {
   const { toast } = useToast()
+  const router = useRouter()
   const [profile, setProfile] = useState<UserProfile>({
     name: "",
     email: "",
@@ -32,36 +35,49 @@ export default function Profile() {
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    // Load profile from localStorage or use default data
-    const storedUser = localStorage.getItem("user")
-    const storedProfile = localStorage.getItem("userProfile")
+    let active = true
 
-    if (storedUser) {
-      const user = JSON.parse(storedUser)
-      setProfile((prev) => ({
-        ...prev,
-        name: user.name || "",
-        email: user.email || "",
-      }))
+    apiFetch<UserProfile>("/api/profile")
+      .then((data) => {
+        if (!active) return
+
+        let { name, email } = data
+
+        // Prefill name/email from the login "user" only when the fetched profile is missing them.
+        if (!name || !email) {
+          const storedUser = localStorage.getItem("user")
+          if (storedUser) {
+            const user = JSON.parse(storedUser) as { name?: string; email?: string }
+            if (!name) name = user.name || ""
+            if (!email) email = user.email || ""
+          }
+        }
+
+        setProfile({
+          name,
+          email,
+          age: data.age,
+          gender: data.gender,
+          painHistory: data.painHistory,
+          avatar: data.avatar,
+        })
+      })
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Couldn't load profile",
+          description: err instanceof Error ? err.message : "Something went wrong",
+          variant: "destructive",
+        })
+      })
+
+    return () => {
+      active = false
     }
-
-    if (storedProfile) {
-      setProfile(JSON.parse(storedProfile))
-    } else if (storedUser) {
-      // Create default profile based on user data
-      const user = JSON.parse(storedUser)
-      const defaultProfile: UserProfile = {
-        name: user.name || "",
-        email: user.email || "",
-        age: "",
-        gender: "",
-        painHistory: "",
-      }
-
-      setProfile(defaultProfile)
-      localStorage.setItem("userProfile", JSON.stringify(defaultProfile))
-    }
-  }, [])
+  }, [router, toast])
 
   const handleChange = (field: keyof UserProfile, value: string) => {
     setProfile((prev) => ({
@@ -70,25 +86,38 @@ export default function Profile() {
     }))
   }
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     setIsLoading(true)
 
-    // Simulate API call
-    setTimeout(() => {
-      // Update user data
-      const userData = { name: profile.name, email: profile.email }
-      localStorage.setItem("user", JSON.stringify(userData))
+    try {
+      const saved = await apiFetch<UserProfile>("/api/profile", {
+        method: "PUT",
+        body: JSON.stringify(profile),
+      })
 
-      // Update profile data
-      localStorage.setItem("userProfile", JSON.stringify(profile))
+      setProfile(saved)
+
+      // Keep the login "user" in sync so the sidebar/greeting stay up to date.
+      const userData = { name: saved.name, email: saved.email }
+      localStorage.setItem("user", JSON.stringify(userData))
 
       toast({
         title: "Profile updated",
         description: "Your profile has been successfully updated",
       })
-
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.push("/login")
+        return
+      }
+      toast({
+        title: "Couldn't save profile",
+        description: err instanceof Error ? err.message : "Something went wrong",
+        variant: "destructive",
+      })
+    } finally {
       setIsLoading(false)
-    }, 1000)
+    }
   }
 
   return (

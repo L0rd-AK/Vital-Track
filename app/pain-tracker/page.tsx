@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
@@ -23,54 +25,64 @@ import {
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 interface PainEntry {
+  id?: string
   date: string
   level: number
   location: string
 }
 
 export default function PainTracker() {
+  const router = useRouter()
   const { toast } = useToast()
   const [painLevel, setPainLevel] = useState(3)
   const [painLocation, setPainLocation] = useState("lower-back")
   const [painEntries, setPainEntries] = useState<PainEntry[]>([])
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    // Load pain entries from localStorage or use sample data
-    const storedEntries = localStorage.getItem("painEntries")
-    if (storedEntries) {
-      setPainEntries(JSON.parse(storedEntries))
-    } else {
-      // Sample data for demonstration
-      const sampleData: PainEntry[] = [
-        { date: "2023-04-10", level: 6, location: "lower-back" },
-        { date: "2023-04-11", level: 5, location: "lower-back" },
-        { date: "2023-04-12", level: 4, location: "neck" },
-        { date: "2023-04-13", level: 3, location: "neck" },
-        { date: "2023-04-14", level: 4, location: "upper-back" },
-        { date: "2023-04-15", level: 2, location: "lower-back" },
-        { date: "2023-04-16", level: 3, location: "lower-back" },
-      ]
-      setPainEntries(sampleData)
-      localStorage.setItem("painEntries", JSON.stringify(sampleData))
+    let active = true
+    apiFetch<PainEntry[]>("/api/pain")
+      .then((data) => {
+        if (active) setPainEntries(data)
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Couldn't load pain history",
+          description: err.message,
+          variant: "destructive",
+        })
+      })
+    return () => {
+      active = false
     }
-  }, [])
+  }, [router, toast])
 
-  const handleAddEntry = () => {
+  const handleAddEntry = async () => {
     const today = new Date().toISOString().split("T")[0]
-    const newEntry: PainEntry = {
-      date: today,
-      level: painLevel,
-      location: painLocation,
+    try {
+      setSaving(true)
+      const created = await apiFetch<PainEntry>("/api/pain", {
+        method: "POST",
+        body: JSON.stringify({ date: today, level: painLevel, location: painLocation }),
+      })
+      setPainEntries((prev) => [...prev, created])
+      toast({
+        title: "Pain entry recorded",
+        description: `Level ${painLevel} pain in ${formatLocation(painLocation)} recorded.`,
+      })
+    } catch (err) {
+      toast({
+        title: "Couldn't save entry",
+        description: (err as Error).message,
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
     }
-
-    const updatedEntries = [...painEntries, newEntry]
-    setPainEntries(updatedEntries)
-    localStorage.setItem("painEntries", JSON.stringify(updatedEntries))
-
-    toast({
-      title: "Pain entry recorded",
-      description: `Level ${painLevel} pain in ${formatLocation(painLocation)} recorded.`,
-    })
   }
 
   const formatLocation = (location: string) => {
@@ -213,8 +225,12 @@ export default function PainTracker() {
               </Select>
             </div>
 
-            <Button onClick={handleAddEntry} className="w-full bg-soft-blue hover:bg-soft-blue/90">
-              Record Pain
+            <Button
+              onClick={handleAddEntry}
+              disabled={saving}
+              className="w-full bg-soft-blue hover:bg-soft-blue/90"
+            >
+              {saving ? "Recording..." : "Record Pain"}
             </Button>
           </CardContent>
         </Card>
@@ -243,7 +259,7 @@ export default function PainTracker() {
                 .reverse()
                 .map((entry, index) => (
                   <div
-                    key={index}
+                    key={entry.id ?? index}
                     className="flex items-center justify-between rounded-xl border p-3 hover:bg-slate-50 transition-colors"
                   >
                     <div>

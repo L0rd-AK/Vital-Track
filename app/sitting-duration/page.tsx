@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,6 +20,7 @@ interface SittingSession {
 
 export default function SittingDuration() {
   const { toast } = useToast()
+  const router = useRouter()
   const [isTracking, setIsTracking] = useState(false)
   const [startTime, setStartTime] = useState<Date | null>(null)
   const [elapsedTime, setElapsedTime] = useState(0) // in seconds
@@ -41,32 +44,29 @@ export default function SittingDuration() {
   }, [isTracking, startTime])
 
   useEffect(() => {
-    // Load sitting sessions from localStorage or use sample data
-    const storedSessions = localStorage.getItem("sittingSessions")
-    if (storedSessions) {
-      setSittingSessions(JSON.parse(storedSessions))
-    } else {
-      // Sample data for demonstration
-      const today = new Date()
-      const sampleData: SittingSession[] = Array.from({ length: 5 }).map((_, index) => {
-        const date = new Date(today)
-        date.setDate(date.getDate() - index)
-        const dateString = date.toISOString().split("T")[0]
+    let active = true
 
-        // Random duration between 180-480 minutes (3-8 hours)
-        const duration = Math.floor(Math.random() * 300) + 180
-
-        return {
-          id: `sample-${index}`,
-          date: dateString,
-          duration,
+    apiFetch<SittingSession[]>("/api/sitting")
+      .then((d) => {
+        if (active) setSittingSessions(d)
+      })
+      .catch((err) => {
+        if (!active) return
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
         }
+        toast({
+          title: "Couldn't load sitting data",
+          description: err instanceof Error ? err.message : "An unexpected error occurred",
+          variant: "destructive",
+        })
       })
 
-      setSittingSessions(sampleData)
-      localStorage.setItem("sittingSessions", JSON.stringify(sampleData))
+    return () => {
+      active = false
     }
-  }, [])
+  }, [router, toast])
 
   const startTracking = () => {
     setStartTime(new Date())
@@ -111,44 +111,48 @@ export default function SittingDuration() {
     setManualMinutes(0)
   }
 
-  const addSittingSession = (durationInMinutes: number) => {
+  const addSittingSession = async (durationInMinutes: number) => {
     const today = new Date().toISOString().split("T")[0]
 
-    // Check if there's already an entry for today
-    const existingSessionIndex = sittingSessions.findIndex((session) => session.date === today)
+    // Check if there's already an entry for today (for toast messaging)
+    const hadExistingSession = sittingSessions.some((session) => session.date === today)
 
-    let updatedSessions: SittingSession[]
-
-    if (existingSessionIndex >= 0) {
-      // Update existing session
-      updatedSessions = [...sittingSessions]
-      updatedSessions[existingSessionIndex] = {
-        ...updatedSessions[existingSessionIndex],
-        duration: updatedSessions[existingSessionIndex].duration + durationInMinutes,
-      }
-
-      toast({
-        title: "Session updated",
-        description: `Added ${formatDuration(durationInMinutes)} to today's sitting time`,
+    try {
+      const savedSession = await apiFetch<SittingSession>("/api/sitting", {
+        method: "POST",
+        body: JSON.stringify({ date: today, duration: durationInMinutes }),
       })
-    } else {
-      // Add new session
-      const newSession: SittingSession = {
-        id: Date.now().toString(),
-        date: today,
-        duration: durationInMinutes,
+
+      // Merge the returned session into state: replace the entry with the same
+      // date if present, else append; keep sorted by date ascending.
+      setSittingSessions((prev) => {
+        const existingIndex = prev.findIndex((session) => session.date === savedSession.date)
+        const merged =
+          existingIndex >= 0
+            ? prev.map((session, index) => (index === existingIndex ? savedSession : session))
+            : [...prev, savedSession]
+
+        return merged.sort((a, b) => a.date.localeCompare(b.date))
+      })
+
+      if (hadExistingSession) {
+        toast({
+          title: "Session updated",
+          description: `Added ${formatDuration(durationInMinutes)} to today's sitting time`,
+        })
+      } else {
+        toast({
+          title: "Session recorded",
+          description: `Recorded ${formatDuration(durationInMinutes)} of sitting time`,
+        })
       }
-
-      updatedSessions = [newSession, ...sittingSessions]
-
+    } catch (err) {
       toast({
-        title: "Session recorded",
-        description: `Recorded ${formatDuration(durationInMinutes)} of sitting time`,
+        title: "Couldn't save sitting session",
+        description: err instanceof Error ? err.message : "An unexpected error occurred",
+        variant: "destructive",
       })
     }
-
-    setSittingSessions(updatedSessions)
-    localStorage.setItem("sittingSessions", JSON.stringify(updatedSessions))
   }
 
   const formatElapsedTime = (seconds: number) => {

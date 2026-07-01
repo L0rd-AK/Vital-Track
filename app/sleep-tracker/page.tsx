@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { apiFetch, ApiError } from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,6 +27,7 @@ import {
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 interface SleepEntry {
+  id?: string
   date: string
   bedTime: string
   wakeTime: string
@@ -34,49 +37,34 @@ interface SleepEntry {
 
 export default function SleepTracker() {
   const { toast } = useToast()
+  const router = useRouter()
   const [bedTime, setBedTime] = useState("22:30")
   const [wakeTime, setWakeTime] = useState("06:30")
   const [sleepDate, setSleepDate] = useState(new Date().toISOString().split("T")[0])
   const [sleepEntries, setSleepEntries] = useState<SleepEntry[]>([])
 
   useEffect(() => {
-    // Load sleep entries from localStorage or use sample data
-    const storedEntries = localStorage.getItem("sleepEntries")
-    if (storedEntries) {
-      setSleepEntries(JSON.parse(storedEntries))
-    } else {
-      // Sample data for demonstration
-      const today = new Date()
-      const sampleData: SleepEntry[] = Array.from({ length: 7 }).map((_, index) => {
-        const date = new Date(today)
-        date.setDate(date.getDate() - (6 - index))
-        const dateString = date.toISOString().split("T")[0]
-
-        // Generate random sleep duration between 6-8 hours
-        const duration = 6 + Math.random() * 2
-
-        // Calculate bed time and wake time based on duration
-        const wakeHour = 6 + Math.floor(Math.random() * 2)
-        const wakeMinute = Math.floor(Math.random() * 60)
-        const wakeTimeStr = `0${wakeHour}:${wakeMinute < 10 ? "0" + wakeMinute : wakeMinute}`
-
-        const bedHour = 22 + Math.floor(Math.random() * 2)
-        const bedMinute = Math.floor(Math.random() * 60)
-        const bedTimeStr = `${bedHour}:${bedMinute < 10 ? "0" + bedMinute : bedMinute}`
-
-        return {
-          date: dateString,
-          bedTime: bedTimeStr,
-          wakeTime: wakeTimeStr,
-          duration: Number.parseFloat(duration.toFixed(1)),
-          quality: Math.floor(Math.random() * 5) + 1,
-        }
+    let active = true
+    apiFetch<SleepEntry[]>("/api/sleep")
+      .then((d) => {
+        if (active) setSleepEntries(d)
       })
-
-      setSleepEntries(sampleData)
-      localStorage.setItem("sleepEntries", JSON.stringify(sampleData))
+      .catch((err) => {
+        if (!active) return
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
+        }
+        toast({
+          title: "Couldn't load sleep data",
+          description: err instanceof Error ? err.message : "Please try again.",
+          variant: "destructive",
+        })
+      })
+    return () => {
+      active = false
     }
-  }, [])
+  }, [router, toast])
 
   const calculateSleepDuration = (bedTime: string, wakeTime: string): number => {
     const [bedHours, bedMinutes] = bedTime.split(":").map(Number)
@@ -92,44 +80,48 @@ export default function SleepTracker() {
     return Number.parseFloat(duration.toFixed(1))
   }
 
-  const handleAddSleepEntry = () => {
+  const handleAddSleepEntry = async () => {
     const duration = calculateSleepDuration(bedTime, wakeTime)
 
-    const newEntry: SleepEntry = {
+    const payload: SleepEntry = {
       date: sleepDate,
       bedTime,
       wakeTime,
       duration,
     }
 
-    // Check if entry for this date already exists
-    const existingEntryIndex = sleepEntries.findIndex((entry) => entry.date === sleepDate)
-
-    let updatedEntries: SleepEntry[]
-
-    if (existingEntryIndex >= 0) {
-      // Update existing entry
-      updatedEntries = [...sleepEntries]
-      updatedEntries[existingEntryIndex] = newEntry
-
-      toast({
-        title: "Sleep record updated",
-        description: `Updated sleep record for ${formatDate(sleepDate)}`,
+    try {
+      const saved = await apiFetch<SleepEntry>("/api/sleep", {
+        method: "POST",
+        body: JSON.stringify(payload),
       })
-    } else {
-      // Add new entry
-      updatedEntries = [...sleepEntries, newEntry].sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-      )
+
+      // Merge the saved entry into state: replace an existing entry with the
+      // same date, otherwise append; keep the list sorted by date ascending.
+      setSleepEntries((prev) => {
+        const existingIndex = prev.findIndex((entry) => entry.date === saved.date)
+        const merged =
+          existingIndex >= 0
+            ? prev.map((entry, index) => (index === existingIndex ? saved : entry))
+            : [...prev, saved]
+        return merged.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      })
 
       toast({
-        title: "Sleep record added",
+        title: "Sleep record saved",
         description: `${duration} hours of sleep recorded for ${formatDate(sleepDate)}`,
       })
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.push("/login")
+        return
+      }
+      toast({
+        title: "Couldn't save sleep record",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      })
     }
-
-    setSleepEntries(updatedEntries)
-    localStorage.setItem("sleepEntries", JSON.stringify(updatedEntries))
   }
 
   const formatDate = (dateString: string) => {
@@ -344,9 +336,9 @@ export default function SleepTracker() {
               {sleepEntries
                 .slice(-7)
                 .reverse()
-                .map((entry, index) => (
+                .map((entry) => (
                   <div
-                    key={index}
+                    key={entry.id ?? entry.date}
                     className="flex items-center justify-between rounded-xl border p-3 hover:bg-slate-50 transition-colors"
                   >
                     <div className="flex items-center gap-3">

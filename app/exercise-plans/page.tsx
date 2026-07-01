@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -8,6 +9,7 @@ import { useToast } from "@/hooks/use-toast"
 import { CheckCircle, Clock, Play, Star } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { apiFetch, ApiError } from "@/lib/api-client"
 
 interface Exercise {
   id: string
@@ -30,8 +32,13 @@ interface ExercisePlan {
   accentColor: string
 }
 
+const PROGRESS_PATH = "/api/lists/planProgress"
+
+const compositeKey = (planId: string, exerciseId: string) => `${planId}:${exerciseId}`
+
 export default function ExercisePlans() {
   const { toast } = useToast()
+  const router = useRouter()
 
   const [plans, setPlans] = useState<ExercisePlan[]>([
     {
@@ -186,9 +193,78 @@ export default function ExercisePlans() {
     },
   ])
 
+  // Collect the composite keys of all currently-completed exercises.
+  const collectCompletedKeys = (allPlans: ExercisePlan[]): string[] =>
+    allPlans.flatMap((plan) =>
+      plan.exercises
+        .filter((exercise) => exercise.completed)
+        .map((exercise) => compositeKey(plan.id, exercise.id)),
+    )
+
+  // Persist the given set of completed keys to the backend.
+  const persistProgress = async (items: string[]) => {
+    try {
+      await apiFetch<string[]>(PROGRESS_PATH, {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      })
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Couldn't save progress",
+        description: "Your changes may not be saved. Please try again.",
+      })
+    }
+  }
+
+  // On mount, load completed exercises and reflect them in local state.
+  useEffect(() => {
+    let active = true
+
+    const loadProgress = async () => {
+      try {
+        const completedKeys = await apiFetch<string[]>(PROGRESS_PATH)
+        if (!active) return
+
+        const completedSet = new Set(completedKeys)
+        setPlans((prevPlans) =>
+          prevPlans.map((plan) => ({
+            ...plan,
+            exercises: plan.exercises.map((exercise) => ({
+              ...exercise,
+              completed: completedSet.has(compositeKey(plan.id, exercise.id)),
+            })),
+          })),
+        )
+      } catch (err) {
+        if (!active) return
+
+        if (err instanceof ApiError && err.status === 401) {
+          router.push("/login")
+          return
+        }
+
+        toast({
+          variant: "destructive",
+          title: "Couldn't load progress",
+          description: "Please try refreshing the page.",
+        })
+      }
+    }
+
+    loadProgress()
+
+    return () => {
+      active = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const toggleExerciseCompletion = (planId: string, exerciseId: string) => {
-    setPlans((prevPlans) =>
-      prevPlans.map((plan) => {
+    let nextItems: string[] = []
+
+    setPlans((prevPlans) => {
+      const updatedPlans = prevPlans.map((plan) => {
         if (plan.id === planId) {
           return {
             ...plan,
@@ -214,8 +290,13 @@ export default function ExercisePlans() {
           }
         }
         return plan
-      }),
-    )
+      })
+
+      nextItems = collectCompletedKeys(updatedPlans)
+      return updatedPlans
+    })
+
+    void persistProgress(nextItems)
   }
 
   const calculateProgress = (exercises: Exercise[]) => {
@@ -244,6 +325,8 @@ export default function ExercisePlans() {
       title: "Progress reset",
       description: "All exercises marked as incomplete",
     })
+
+    void persistProgress([])
   }
 
   const renderDifficultyStars = (difficulty: number) => {
