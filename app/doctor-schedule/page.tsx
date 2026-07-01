@@ -204,6 +204,34 @@ export default function DoctorSchedule() {
     <div className="container mx-auto p-4 md:p-6">
       <h1 className="mb-6 text-3xl font-bold text-rich-navy">Doctor Schedule</h1>
 
+      <Card className="mb-6 border-soft-blue/20">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg text-rich-navy">Your Appointments</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {appointments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No appointments booked yet.</p>
+          ) : (
+            <ul className="divide-y">
+              {appointments.map((appointment) => (
+                <li
+                  key={appointment.id}
+                  className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-rich-navy">{appointment.doctorName}</p>
+                    <p className="text-xs text-muted-foreground">{appointment.specialty}</p>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium text-soft-blue">
+                    {format(new Date(appointment.date), "MMMM d, yyyy")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="mb-6 grid gap-4 md:grid-cols-3">
         <div className="md:col-span-2">
           <div className="relative">

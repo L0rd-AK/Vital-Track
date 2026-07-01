@@ -235,22 +235,49 @@ export default function GymFinder() {
     )
   })
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
     if (!reviewGymId) return
 
     const gym = gyms.find((g) => g.id === reviewGymId)
 
     if (!gym) return
 
-    toast({
-      title: "Review submitted",
-      description: `Thank you for reviewing ${gym.name}!`,
-    })
+    try {
+      const createdReview = await apiFetch<GymReview>("/api/gym-reviews", {
+        method: "POST",
+        body: JSON.stringify({
+          gymId: reviewGymId,
+          author: userName || "You",
+          rating: reviewRating,
+          comment: reviewComment,
+        }),
+      })
 
-    // Reset form
-    setReviewGymId(null)
-    setReviewRating(5)
-    setReviewComment("")
+      setUserReviews((prev) => ({
+        ...prev,
+        [createdReview.gymId]: [...(prev[createdReview.gymId] ?? []), createdReview],
+      }))
+
+      toast({
+        title: "Review submitted",
+        description: `Thank you for reviewing ${gym.name}!`,
+      })
+
+      // Reset form
+      setReviewGymId(null)
+      setReviewRating(5)
+      setReviewComment("")
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.push("/login")
+        return
+      }
+      toast({
+        title: "Couldn't submit review",
+        description: err instanceof Error ? err.message : "Something went wrong",
+        variant: "destructive",
+      })
+    }
   }
 
   const renderRatingStars = (rating: number, interactive = false) => {
@@ -369,11 +396,27 @@ export default function GymFinder() {
                   </Dialog>
                 </div>
 
-                {gym.reviews && gym.reviews.length > 0 && (
+                {((gym.reviews?.length ?? 0) > 0 || (userReviews[gym.id]?.length ?? 0) > 0) && (
                   <div className="mt-4 space-y-3">
                     <h3 className="text-sm font-medium">Recent Reviews</h3>
-                    {gym.reviews.map((review, index) => (
-                      <div key={index} className="rounded-lg border p-3 text-sm">
+                    {gym.reviews?.map((review, index) => (
+                      <div key={`seed-${index}`} className="rounded-lg border p-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{review.author}</span>
+                          <div className="flex">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`h-3 w-3 ${i < review.rating ? "fill-amber-400 text-amber-400" : "text-gray-300"}`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">{review.comment}</p>
+                      </div>
+                    ))}
+                    {userReviews[gym.id]?.map((review) => (
+                      <div key={review.id} className="rounded-lg border p-3 text-sm">
                         <div className="flex items-center justify-between">
                           <span className="font-medium">{review.author}</span>
                           <div className="flex">

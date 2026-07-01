@@ -306,19 +306,17 @@ export default function ExercisePlans() {
   }
 
   const resetPlanProgress = (planId: string) => {
+    // Clearing progress wipes the persisted list (PUT { items: [] }), so reset
+    // every plan locally to keep local state consistent with the backend.
+    void planId
     setPlans((prevPlans) =>
-      prevPlans.map((plan) => {
-        if (plan.id === planId) {
-          return {
-            ...plan,
-            exercises: plan.exercises.map((exercise) => ({
-              ...exercise,
-              completed: false,
-            })),
-          }
-        }
-        return plan
-      }),
+      prevPlans.map((plan) => ({
+        ...plan,
+        exercises: plan.exercises.map((exercise) => ({
+          ...exercise,
+          completed: false,
+        })),
+      })),
     )
 
     toast({
