@@ -223,7 +223,7 @@ export default function DoctorSchedule() {
                     <p className="text-xs text-muted-foreground">{appointment.specialty}</p>
                   </div>
                   <span className="shrink-0 text-sm font-medium text-soft-blue">
-                    {format(new Date(appointment.date), "MMMM d, yyyy")}
+                    {format(new Date(`${appointment.date}T00:00:00`), "MMMM d, yyyy")}
                   </span>
                 </li>
               ))}

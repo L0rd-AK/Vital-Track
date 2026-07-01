@@ -306,25 +306,29 @@ export default function ExercisePlans() {
   }
 
   const resetPlanProgress = (planId: string) => {
-    // Clearing progress wipes the persisted list (PUT { items: [] }), so reset
-    // every plan locally to keep local state consistent with the backend.
-    void planId
-    setPlans((prevPlans) =>
-      prevPlans.map((plan) => ({
-        ...plan,
-        exercises: plan.exercises.map((exercise) => ({
-          ...exercise,
-          completed: false,
-        })),
-      })),
-    )
+    let nextItems: string[] = []
+
+    // Reset only the given plan; keep other plans' progress and persist the
+    // remaining completed keys.
+    setPlans((prevPlans) => {
+      const updatedPlans = prevPlans.map((plan) =>
+        plan.id === planId
+          ? {
+              ...plan,
+              exercises: plan.exercises.map((exercise) => ({ ...exercise, completed: false })),
+            }
+          : plan,
+      )
+      nextItems = collectCompletedKeys(updatedPlans)
+      return updatedPlans
+    })
 
     toast({
       title: "Progress reset",
-      description: "All exercises marked as incomplete",
+      description: "This plan's exercises are marked as incomplete",
     })
 
-    void persistProgress([])
+    void persistProgress(nextItems)
   }
 
   const renderDifficultyStars = (difficulty: number) => {
