@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AppShell } from "@/components/app-shell"
 import { Toaster } from "@/components/ui/toaster"
+import { Analytics } from "@vercel/analytics/next"
 
 // Initialize the fonts
 const roboto = Roboto({
@@ -38,6 +39,7 @@ export default function RootLayout({
           <AppShell>{children}</AppShell>
           <Toaster />
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   )
