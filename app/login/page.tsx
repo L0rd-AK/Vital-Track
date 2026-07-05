@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   createUserWithEmailAndPassword,
   getRedirectResult,
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
@@ -29,30 +30,27 @@ export default function LoginPage() {
   const [signupPassword, setSignupPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
-  const finishGoogleSignIn = (user: { displayName: string | null; email: string | null }) => {
-    localStorage.setItem("user", JSON.stringify({ name: user.displayName || "User", email: user.email }))
-    toast({
-      title: "Google Sign-in successful",
-      description: "Welcome to VitalTrack!",
-    })
-    router.push("/dashboard")
-  }
-
-  // Complete the redirect-based Google sign-in flow when the browser blocks popups
-  // and we fall back to signInWithRedirect. Runs on mount after Google redirects back.
+  // Single source of truth for auth navigation. Fires for popup, redirect, and
+  // existing sessions — even when getRedirectResult returns null on Vercel due to
+  // third-party-cookie partitioning. This is what actually gets the user to /dashboard.
   useEffect(() => {
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result?.user) finishGoogleSignIn(result.user)
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) return
+      localStorage.setItem("user", JSON.stringify({ name: user.displayName || "User", email: user.email }))
+      router.push("/dashboard")
+    })
+
+    // Surface redirect-flow errors; navigation itself is handled by onAuthStateChanged.
+    getRedirectResult(auth).catch((error: any) => {
+      console.error("Google redirect error:", error.message)
+      toast({
+        title: "Google Sign-in failed",
+        description: error.message,
+        variant: "destructive",
       })
-      .catch((error: any) => {
-        console.error("Google redirect error:", error.message)
-        toast({
-          title: "Google Sign-in failed",
-          description: error.message,
-          variant: "destructive",
-        })
-      })
+    })
+
+    return () => unsubscribe()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -119,8 +117,8 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      finishGoogleSignIn(result.user);
+      // Success navigates via the onAuthStateChanged listener above.
+      await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
       // Popup blocked / closed by the browser (common on prod + mobile) — fall back
       // to a full-page redirect, which getRedirectResult picks up on return.
