@@ -36,6 +36,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useToast } from "@/hooks/use-toast"
+import { signOut } from "firebase/auth"
+import { auth } from "@/lib/firebase"
 
 type NavItem = { title: string; icon: React.ReactNode; href: string }
 type NavGroup = { label: string; items: NavItem[] }
@@ -97,7 +99,14 @@ export function AppSidebar() {
     }
   }, [])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Sign out of Firebase first — without this the session stays alive and the
+    // login page immediately redirects back to the dashboard.
+    try {
+      await signOut(auth)
+    } catch (error) {
+      console.error("Logout error:", error)
+    }
     localStorage.removeItem("user")
     toast({
       title: "Logged out",

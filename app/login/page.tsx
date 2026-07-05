@@ -13,16 +13,18 @@ import { useToast } from "@/hooks/use-toast"
 import {
   createUserWithEmailAndPassword,
   getRedirectResult,
-  onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
+  updateProfile,
 } from "firebase/auth"
 import { auth, googleProvider } from "@/lib/firebase"
+import { useAuth } from "@/lib/auth-context"
 
 export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const { user } = useAuth()
   const [loginEmail, setLoginEmail] = useState("")
   const [loginPassword, setLoginPassword] = useState("")
   const [signupName, setSignupName] = useState("")
@@ -30,17 +32,14 @@ export default function LoginPage() {
   const [signupPassword, setSignupPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
-  // Single source of truth for auth navigation. Fires for popup, redirect, and
-  // existing sessions — even when getRedirectResult returns null on Vercel due to
-  // third-party-cookie partitioning. This is what actually gets the user to /dashboard.
+  // Single navigation path: once the AuthProvider confirms a signed-in user (email
+  // login, Google popup, redirect return, or an existing session), go to /dashboard.
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) return
-      localStorage.setItem("user", JSON.stringify({ name: user.displayName || "User", email: user.email }))
-      router.push("/dashboard")
-    })
+    if (user) router.push("/dashboard")
+  }, [user, router])
 
-    // Surface redirect-flow errors; navigation itself is handled by onAuthStateChanged.
+  // Surface Google redirect-flow errors; navigation itself is handled by the effect above.
+  useEffect(() => {
     getRedirectResult(auth).catch((error: any) => {
       console.error("Google redirect error:", error.message)
       toast({
@@ -49,29 +48,20 @@ export default function LoginPage() {
         variant: "destructive",
       })
     })
-
-    return () => unsubscribe()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [toast])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
-      // Firebase sign in
-      const userCredential = await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
-      const user = userCredential.user;
-
-      // Store user info in localStorage
-      localStorage.setItem("user", JSON.stringify({ name: user.displayName || "User", email: user.email }));
+      // Firebase sign in — the AuthProvider handles localStorage + redirect to /dashboard.
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
 
       toast({
         title: "Login successful",
         description: "Welcome back to VitalTrack!",
       });
-
-      router.push("/dashboard");
     } catch (error: any) {
       console.error("Login error:", error.message);
       toast({
@@ -89,19 +79,16 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      // Firebase sign up
+      // Firebase sign up, then set the display name so the AuthProvider mirrors the
+      // real name (Firebase leaves displayName null on email/password accounts).
       const userCredential = await createUserWithEmailAndPassword(auth, signupEmail, signupPassword)
-      const user = userCredential.user;
-
-      // Store user info in localStorage
-      localStorage.setItem("user", JSON.stringify({ name: signupName, email: user.email }));
+      await updateProfile(userCredential.user, { displayName: signupName })
 
       toast({
         title: "Account created",
         description: "Welcome to VitalTrack!",
       });
-
-      router.push("/dashboard");
+      // localStorage + redirect to /dashboard handled by the AuthProvider.
     } catch (error: any) {
       console.error("Signup error:", error.message);
       toast({

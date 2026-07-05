@@ -5,15 +5,11 @@ import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Activity, Calendar, Clock, Heart, MapPin, MessageSquare, Moon, User, Users, Zap } from "lucide-react"
 import Link from "next/link"
-
-interface DashboardUser {
-  name: string
-  email: string
-}
+import { useAuth } from "@/lib/auth-context"
 
 export default function Dashboard() {
   const router = useRouter()
-  const [user, setUser] = useState<DashboardUser | null>(null)
+  const { user, loading } = useAuth()
   const [greeting, setGreeting] = useState("")
 
   useEffect(() => {
@@ -22,18 +18,16 @@ export default function Dashboard() {
     if (hour < 12) setGreeting("Good morning")
     else if (hour < 18) setGreeting("Good afternoon")
     else setGreeting("Good evening")
+  }, [])
 
-    // Check if user is logged in
-    const storedUser = localStorage.getItem("user")
-    if (!storedUser) {
-      router.push("/login")
-      return
-    }
+  useEffect(() => {
+    // Redirect to login once Firebase confirms there is no signed-in user.
+    if (!loading && !user) router.push("/login")
+  }, [user, loading, router])
 
-    setUser(JSON.parse(storedUser))
-  }, [router])
+  if (loading || !user) return null
 
-  if (!user) return null
+  const displayName = user.displayName || "User"
 
   const quickStats = [
     { label: "Streak", value: "5 days" },
@@ -137,7 +131,7 @@ export default function Dashboard() {
     <div className="container mx-auto p-4 md:p-6">
       <header className="mb-8">
         <h1 className="font-poppins text-3xl font-bold text-rich-navy">
-          {greeting}, {user.name}
+          {greeting}, {displayName}
         </h1>
         <p className="text-muted-foreground">Your whole-body wellness companion</p>
       </header>
