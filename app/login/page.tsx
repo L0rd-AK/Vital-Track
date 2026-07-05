@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,13 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth"
+import {
+  createUserWithEmailAndPassword,
+  getRedirectResult,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+} from "firebase/auth"
 import { auth, googleProvider } from "@/lib/firebase"
 
 export default function LoginPage() {
@@ -22,6 +28,33 @@ export default function LoginPage() {
   const [signupEmail, setSignupEmail] = useState("")
   const [signupPassword, setSignupPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+
+  const finishGoogleSignIn = (user: { displayName: string | null; email: string | null }) => {
+    localStorage.setItem("user", JSON.stringify({ name: user.displayName || "User", email: user.email }))
+    toast({
+      title: "Google Sign-in successful",
+      description: "Welcome to VitalTrack!",
+    })
+    router.push("/dashboard")
+  }
+
+  // Complete the redirect-based Google sign-in flow when the browser blocks popups
+  // and we fall back to signInWithRedirect. Runs on mount after Google redirects back.
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) finishGoogleSignIn(result.user)
+      })
+      .catch((error: any) => {
+        console.error("Google redirect error:", error.message)
+        toast({
+          title: "Google Sign-in failed",
+          description: error.message,
+          variant: "destructive",
+        })
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -87,17 +120,18 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-
-      localStorage.setItem("user", JSON.stringify({ name: user.displayName || "User", email: user.email }));
-
-      toast({
-        title: "Google Sign-in successful",
-        description: "Welcome to VitalTrack!",
-      });
-
-      router.push("/dashboard");
+      finishGoogleSignIn(result.user);
     } catch (error: any) {
+      // Popup blocked / closed by the browser (common on prod + mobile) — fall back
+      // to a full-page redirect, which getRedirectResult picks up on return.
+      if (
+        error.code === "auth/popup-blocked" ||
+        error.code === "auth/popup-closed-by-user" ||
+        error.code === "auth/cancelled-popup-request"
+      ) {
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
       console.error("Google Sign-in error:", error.message);
       toast({
         title: "Google Sign-in failed",
